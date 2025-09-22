@@ -3,7 +3,6 @@ import { motion } from "framer-motion";
 const PerformanceCard = ({ performance }: { performance: any }) => {
   if (!performance) return null;
 
-  // Convert audits into clean array with value + explanation
   const items = Object.entries(performance.audits || {}).map(([key, raw]) => {
     if (typeof raw === "object" && raw !== null) {
       return {
@@ -21,9 +20,7 @@ const PerformanceCard = ({ performance }: { performance: any }) => {
 
   return (
     <div className="rounded-xl bg-gray-800 p-6 shadow-lg w-full">
-      <h3 className="text-2xl font-bold text-yellow-400 mb-6">
-        ⚡ Performance Report
-      </h3>
+      <h3 className="text-2xl font-bold text-blue-400 mb-6">⚡ Performance Report</h3>
 
       <div className="space-y-6">
         {items.map((item, index) => (
@@ -46,6 +43,16 @@ const PerformanceCard = ({ performance }: { performance: any }) => {
           </motion.div>
         ))}
       </div>
+
+      {/* ✅ AI Suggestions */}
+      {performance.aiSuggestion && (
+        <div className="mt-6 bg-blue-900/30 border border-blue-500/40 rounded-lg p-4">
+          <h4 className="text-lg font-semibold text-blue-300 mb-2">🤖 AI Suggestions</h4>
+          <p className="text-gray-300 whitespace-pre-line">
+            {performance.aiSuggestion.replace(/\*\*(.*?)\*\*/g, "$1")}
+          </p>
+        </div>
+      )}
     </div>
   );
 };

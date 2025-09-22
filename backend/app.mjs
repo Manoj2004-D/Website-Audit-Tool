@@ -11,9 +11,47 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import axe from "axe-core";
 import { v4 as uuidv4 } from "uuid";
+import dotenv from "dotenv";
+import { GoogleGenerativeAI } from "@google/generative-ai";   // ✅ Gemini SDK
 
+dotenv.config();
 puppeteer.use(StealthPlugin());
+
 const resultsStore = new Map(); // scanId → result
+
+// ===================
+// Gemini client
+// ===================
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+async function generateAISuggestions(section, issues) {
+  try {
+    const prompt = `
+    You are a senior web auditor.
+    Section: ${section}
+    Issues detected: ${JSON.stringify(issues)}
+
+    Please give 2-3 clear, actionable, developer-friendly suggestions to fix these issues.
+    Keep the language concise and practical.
+    Do not use Markdown formatting like **bold**, just plain text.
+    `;
+
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // or "gemini-1.5-pro"
+    const response = await model.generateContent([prompt]);
+
+    // Extract text safely
+    let text = response.response?.candidates?.[0]?.content?.parts?.[0]?.text || "No suggestion available.";
+
+    // Remove Markdown bold (**...**) if still present
+    text = text.replace(/\*\*(.*?)\*\*/g, "$1");
+
+    return text.trim();
+  } catch (err) {
+    console.error("Gemini suggestion error:", err);
+    return "AI suggestion could not be generated.";
+  }
+}
+
 
 // ===================
 // Load axe-core
@@ -22,7 +60,7 @@ const axePath = fileURLToPath(await import.meta.resolve("axe-core/axe.min.js"));
 const axeSource = fs.readFileSync(axePath, "utf8");
 
 // ===================
-// Dictionaries (Explanations for non-tech users)
+// Dictionaries
 // ===================
 const headerExplanations = {
   "strict-transport-security": "Forces browsers to use HTTPS only, protecting users from insecure connections.",
@@ -30,7 +68,7 @@ const headerExplanations = {
   "x-content-type-options": "Prevents browsers from misinterpreting files, reducing certain attacks.",
   "content-security-policy": "Controls what content is allowed (scripts, images, etc.) to block XSS attacks.",
   "referrer-policy": "Controls what information is sent when users click external links (privacy protection).",
-  "permissions-policy": "Restricts access to features like camera, microphone, or location for better security."
+  "permissions-policy": "Restricts access to features like camera, microphone, or location for better security.",
 };
 
 const perfExplanations = {
@@ -39,7 +77,7 @@ const perfExplanations = {
   "interactive": "When the page is fully usable. Should be under 5 seconds.",
   "total-blocking-time": "Time the browser was blocked by scripts. Lower means smoother experience.",
   "largest-contentful-paint": "Time taken for the biggest image or text to appear. Aim under 2.5 seconds.",
-  "cumulative-layout-shift": "Measures how much the layout shifts unexpectedly. Keep it below 0.1."
+  "cumulative-layout-shift": "Measures how much the layout shifts unexpectedly. Keep it below 0.1.",
 };
 
 // ===================
@@ -53,7 +91,7 @@ async function runLighthouseAudit(targetUrl, browser) {
     port,
     output: "json",
     logLevel: "error",
-    onlyCategories: ["performance", "seo"]
+    onlyCategories: ["performance", "seo"],
   };
 
   const result = await lighthouse(targetUrl, options);
@@ -70,29 +108,29 @@ async function runLighthouseAudit(targetUrl, browser) {
     audits: {
       firstContentfulPaint: {
         value: pick("first-contentful-paint"),
-        explanation: perfExplanations["first-contentful-paint"]
+        explanation: perfExplanations["first-contentful-paint"],
       },
       speedIndex: {
         value: pick("speed-index"),
-        explanation: perfExplanations["speed-index"]
+        explanation: perfExplanations["speed-index"],
       },
       interactive: {
         value: pick("interactive"),
-        explanation: perfExplanations["interactive"]
+        explanation: perfExplanations["interactive"],
       },
       totalBlockingTime: {
         value: pick("total-blocking-time"),
-        explanation: perfExplanations["total-blocking-time"]
+        explanation: perfExplanations["total-blocking-time"],
       },
       largestContentfulPaint: {
         value: pick("largest-contentful-paint"),
-        explanation: perfExplanations["largest-contentful-paint"]
+        explanation: perfExplanations["largest-contentful-paint"],
       },
       cumulativeLayoutShift: {
         value: pick("cumulative-layout-shift"),
-        explanation: perfExplanations["cumulative-layout-shift"]
-      }
-    }
+        explanation: perfExplanations["cumulative-layout-shift"],
+      },
+    },
   };
 }
 
@@ -113,7 +151,7 @@ async function runAccessibilityAudit(targetUrl, browser) {
     description: v.description,
     help: v.help,
     helpUrl: v.helpUrl,
-    friendlyNote: `This affects accessibility: ${v.description}. ${v.help}`
+    friendlyNote: `This affects accessibility: ${v.description}. ${v.help}`,
   }));
 }
 
@@ -173,7 +211,7 @@ app.post("/api/audit", async (req, res) => {
         missingHeaders.map((h) => [h, headerExplanations[h] || ""])
       ),
       detectedHeaders: detected,
-      reachable: Object.keys(headers).length > 0
+      reachable: Object.keys(headers).length > 0,
     };
   } catch (err) {
     securityReport = { error: "Security check failed", details: err.message };
@@ -186,7 +224,7 @@ app.post("/api/audit", async (req, res) => {
     security: securityReport,
     performance: null,
     seo: null,
-    accessibility: null
+    accessibility: null,
   });
 
   // Kick off background job
@@ -197,12 +235,33 @@ app.post("/api/audit", async (req, res) => {
   res.json({ scanId, initial: resultsStore.get(scanId) });
 });
 
-app.get("/api/results/:scanId", (req, res) => {
+app.get("/api/results/:scanId", async (req, res) => {
   const scanId = req.params.scanId;
   if (!resultsStore.has(scanId)) {
     return res.status(404).json({ error: "Scan not found" });
   }
-  res.json(resultsStore.get(scanId));
+
+  const result = resultsStore.get(scanId);
+
+  // Only add AI suggestions when status is completed
+  if (result.status === "completed" && !result.aiEnhanced) {
+    if (result.security) {
+      result.security.aiSuggestion = await generateAISuggestions("Security", result.security);
+    }
+    if (result.performance) {
+      result.performance.aiSuggestion = await generateAISuggestions("Performance", result.performance);
+    }
+    if (result.seo) {
+      result.seo.aiSuggestion = await generateAISuggestions("SEO", result.seo);
+    }
+    if (result.accessibility) {
+      result.accessibility.aiSuggestion = await generateAISuggestions("Accessibility", result.accessibility);
+    }
+    result.aiEnhanced = true;
+    resultsStore.set(scanId, result);
+  }
+
+  res.json(result);
 });
 
 // ===================
@@ -211,7 +270,7 @@ app.get("/api/results/:scanId", (req, res) => {
 async function runFullAudit(scanId, target) {
   const browser = await puppeteer.launch({
     headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"]
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
 
   let perfReport, accessibilityReport;
@@ -228,9 +287,7 @@ async function runFullAudit(scanId, target) {
     try {
       accessibilityReport = await runAccessibilityAudit(target, browser);
     } catch (err) {
-      accessibilityReport = [
-        { error: "Accessibility scan failed", details: err.message }
-      ];
+      accessibilityReport = [{ error: "Accessibility scan failed", details: err.message }];
     }
 
     resultsStore.set(scanId, {
@@ -238,7 +295,7 @@ async function runFullAudit(scanId, target) {
       status: "completed",
       performance: perfReport,
       seo: perfReport,
-      accessibility: accessibilityReport
+      accessibility: accessibilityReport,
     });
   } finally {
     await browser.close();
@@ -247,6 +304,4 @@ async function runFullAudit(scanId, target) {
 
 // ===================
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () =>
-  console.log(`✅ Backend running on http://localhost:${PORT}`)
-);
+app.listen(PORT, () => console.log(`✅ Backend running on http://localhost:${PORT}`));

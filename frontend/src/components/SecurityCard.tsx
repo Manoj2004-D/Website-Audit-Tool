@@ -31,6 +31,16 @@ const SecurityCard = ({ security }: { security: any }) => {
           </motion.div>
         ))}
       </div>
+
+      {/* ✅ AI Suggestions */}
+      {security.aiSuggestion && (
+        <div className="mt-6 bg-purple-900/30 border border-purple-500/40 rounded-lg p-4">
+          <h4 className="text-lg font-semibold text-purple-300 mb-2">🤖 AI Suggestions</h4>
+          <p className="text-gray-300 whitespace-pre-line">
+            {security.aiSuggestion.replace(/\*\*(.*?)\*\*/g, "$1")}
+          </p>
+        </div>
+      )}
     </div>
   );
 };

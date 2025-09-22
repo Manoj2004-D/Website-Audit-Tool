@@ -3,7 +3,6 @@ import { motion } from "framer-motion";
 const SEOCard = ({ seo }: { seo: any }) => {
   if (!seo) return null;
 
-  // Convert audits into clean array with value + explanation
   const items = Object.entries(seo.audits || {}).map(([key, raw]) => {
     if (typeof raw === "object" && raw !== null) {
       return {
@@ -46,6 +45,16 @@ const SEOCard = ({ seo }: { seo: any }) => {
           </motion.div>
         ))}
       </div>
+
+      {/* ✅ AI Suggestions */}
+      {seo.aiSuggestion && (
+        <div className="mt-6 bg-green-900/30 border border-green-500/40 rounded-lg p-4">
+          <h4 className="text-lg font-semibold text-green-300 mb-2">🤖 AI Suggestions</h4>
+          <p className="text-gray-300 whitespace-pre-line">
+            {seo.aiSuggestion.replace(/\*\*(.*?)\*\*/g, "$1")}
+          </p>
+        </div>
+      )}
     </div>
   );
 };
