@@ -1,4 +1,4 @@
-🌐 WebAudit Pro — Next-Gen Website Auditing Platform
+🌐 Audit AI — Next-Gen Website Auditing Platform
 
 WebAudit Pro is a modern full-stack project that lets you analyze websites for security, performance, SEO, and accessibility.
 It provides a clean dashboard, animated UI, and generates a detailed PDF report with recommendations.
